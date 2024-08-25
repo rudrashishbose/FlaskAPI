@@ -1,39 +1,36 @@
-from flask import Flask, request, redirect, url_for, flash, jsonify
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
 import os
-from werkzeug.utils import secure_filename
+from typing import List
 
-app = Flask(__name__)
+app = FastAPI()
 
 # Set the folder where files will be uploaded
 UPLOAD_FOLDER = 'uploads/'
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 # Create the uploads directory if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def allowed_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    # Check if the POST request has the file part
-    if 'file' not in request.files:
-        flash('No file part')
-        return jsonify({"error": "No file part in the request"}), 400
-    file = request.files['file']
-    # If the user does not select a file, the browser submits an empty file without a filename
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    if not file:
+        raise HTTPException(status_code=400, detail="No file part in the request")
+    
     if file.filename == '':
-        flash('No selected file')
-        return jsonify({"error": "No selected file"}), 400
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        return jsonify({"success": True, "filename": filename}), 200
+        raise HTTPException(status_code=400, detail="No selected file")
+    
+    if allowed_file(file.filename):
+        file_location = os.path.join(UPLOAD_FOLDER, file.filename)
+        with open(file_location, "wb") as f:
+            f.write(await file.read())
+        return JSONResponse(content={"success": True, "filename": file.filename}, status_code=200)
     else:
-        return jsonify({"error": "File type not allowed"}), 400
+        raise HTTPException(status_code=400, detail="File type not allowed")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, debug=True)
